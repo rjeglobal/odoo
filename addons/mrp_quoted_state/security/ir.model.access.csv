@@ -1,0 +1,3 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_mrp_production_user,Access Manufacturing Order User,model_mrp_production,,1,1,1,1
+access_mrp_production_manager,Access Manufacturing Order Manager,model_mrp_production,base.group_user,1,1,1,1

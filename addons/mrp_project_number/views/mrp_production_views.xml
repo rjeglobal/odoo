@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Add to Form View -->
+    <record id="mrp_production_form_view_project_number" model="ir.ui.view">
+        <field name="name">mrp.production.form.project.number</field>
+        <field name="model">mrp.production</field>
+        <field name="inherit_id" ref="mrp.mrp_production_form_view"/>
+        <field name="arch" type="xml">
+            <!-- Add project number after product_id -->
+            <xpath expr="//field[@name='product_id']" position="after">
+                <field name="project_number"/>
+            </xpath>
+        </field>
+    </record>
+    
+    <!-- Add to Tree View -->
+    <record id="mrp_production_tree_view_project_number" model="ir.ui.view">
+        <field name="name">mrp.production.tree.project.number</field>
+        <field name="model">mrp.production</field>
+        <field name="inherit_id" ref="mrp.mrp_production_tree_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='product_id']" position="after">
+                <field name="project_number" optional="show"/>
+            </xpath>
+        </field>
+    </record>
+    
+    <!-- Add to Search View -->
+    <record id="mrp_production_search_view_project_number" model="ir.ui.view">
+        <field name="name">mrp.production.search.project.number</field>
+        <field name="model">mrp.production</field>
+        <field name="inherit_id" ref="mrp.view_mrp_production_filter"/>
+        <field name="arch" type="xml">
+            <xpath expr="//search" position="inside">
+                <field name="project_number"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

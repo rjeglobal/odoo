@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Add fields to workorder tree view -->
+    <record id="mrp_workorder_tree_view_project_status" model="ir.ui.view">
+        <field name="name">mrp.workorder.tree.project.status</field>
+        <field name="model">mrp.workorder</field>
+        <field name="inherit_id" ref="mrp.mrp_production_workorder_tree_editable_view"/>
+        <field name="arch" type="xml">
+            <!-- Add project number after workcenter -->
+            <xpath expr="//field[@name='workcenter_id']" position="after">
+                <field name="project_number" optional="show"/>
+            </xpath>
+            
+            <!-- Add MO status with color coding -->
+            <xpath expr="//field[@name='state']" position="before">
+                <field name="mo_state_display" 
+                       string="MO Status"
+                       optional="show" 
+                       widget="badge" 
+                       decoration-info="mo_state == 'draft'"
+                       decoration-warning="mo_state == 'quoted'"
+                       decoration-success="mo_state in ['confirmed', 'progress']"
+                       decoration-danger="mo_state == 'cancel'"
+                       decoration-muted="mo_state == 'done'"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Add fields to workorder form view -->
+    <record id="mrp_workorder_form_view_project_status" model="ir.ui.view">
+        <field name="name">mrp.workorder.form.project.status</field>
+        <field name="model">mrp.workorder</field>
+        <field name="inherit_id" ref="mrp.mrp_production_workorder_form_view_inherit"/>
+        <field name="arch" type="xml">
+            <!-- Add project info group after production_id -->
+            <xpath expr="//field[@name='production_id']" position="after">
+                <field name="project_number"/>
+                <field name="mo_state_display" string="MO Status" widget="badge"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Enhance workorder search view -->
+    <record id="mrp_workorder_search_view_project_status" model="ir.ui.view">
+        <field name="name">mrp.workorder.search.project.status</field>
+        <field name="model">mrp.workorder</field>
+        <field name="inherit_id" ref="mrp.view_mrp_production_work_order_search"/>
+        <field name="arch" type="xml">
+            <!-- Add search by project number -->
+            <xpath expr="//field[@name='production_id']" position="after">
+                <field name="project_number" string="Project Number"/>
+            </xpath>
+            
+            <!-- Add filters for MO status -->
+            <xpath expr="//search" position="inside">
+                <filter string="Quoted MOs" name="quoted_mo" domain="[('mo_state', '=', 'quoted')]"/>
+                <filter string="Confirmed MOs" name="confirmed_mo" domain="[('mo_state', '=', 'confirmed')]"/>
+                <filter string="In Progress MOs" name="progress_mo" domain="[('mo_state', '=', 'progress')]"/>
+                <separator/>
+                <filter string="Project Number" name="groupby_project" context="{'group_by': 'project_number'}"/>
+                <filter string="MO Status" name="groupby_mo_status" context="{'group_by': 'mo_state'}"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Add project number to MO form view -->
+    <record id="mrp_production_form_view_project_number" model="ir.ui.view">
+        <field name="name">mrp.production.form.project.number</field>
+        <field name="model">mrp.production</field>
+        <field name="inherit_id" ref="mrp.mrp_production_form_view"/>
+        <field name="arch" type="xml">
+            <!-- Add project number field after product -->
+            <xpath expr="//field[@name='product_id']" position="after">
+                <field name="project_number" placeholder="Enter project number..."/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Add to MO tree view -->
+    <record id="mrp_production_tree_view_project_number" model="ir.ui.view">
+        <field name="name">mrp.production.tree.project.number</field>
+        <field name="model">mrp.production</field>
+        <field name="inherit_id" ref="mrp.mrp_production_tree_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='product_id']" position="after">
+                <field name="project_number" optional="show"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Add to MO search view -->
+    <record id="mrp_production_search_view_project_number" model="ir.ui.view">
+        <field name="name">mrp.production.search.project.number</field>
+        <field name="model">mrp.production</field>
+        <field name="inherit_id" ref="mrp.view_mrp_production_filter"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='name']" position="after">
+                <field name="project_number"/>
+            </xpath>
+            <xpath expr="//search" position="inside">
+                <filter string="Project Number" name="groupby_project" context="{'group_by': 'project_number'}"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>
