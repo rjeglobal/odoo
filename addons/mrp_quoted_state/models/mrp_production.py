@@ -1,5 +1,6 @@
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
+from datetime import timedelta
 
 class MrpProduction(models.Model):
     _inherit = 'mrp.production'
@@ -7,7 +8,7 @@ class MrpProduction(models.Model):
     # Override the state field completely to control the order
     state = fields.Selection([
         ('draft', 'Draft'),
-        ('quoted', 'Quoted'), 
+        ('quoted', 'Quoted'),  # Now it's in the right position
         ('confirmed', 'Confirmed'),
         ('progress', 'In Progress'),
         ('to_close', 'To Close'),
@@ -67,6 +68,77 @@ class MrpProduction(models.Model):
             production.message_post(
                 body=_('Manufacturing Order has been quoted.')
             )
+        
+        return True
+    
+    def update_child_project_numbers(self):
+        """
+        Update project numbers on all child MOs that don't have one
+        This can be called manually or via server action
+        """
+        for production in self:
+            if production.project_number:
+                # Find all child MOs without project number
+                child_mos = self.search([
+                    '|',
+                    ('parent_production_id', '=', production.id),
+                    ('origin', '=', production.name),
+                    ('project_number', '=', False)
+                ])
+                
+                if child_mos:
+                    child_mos.write({'project_number': production.project_number})
+                    production.message_post(
+                        body=_('Updated project number on %d child MO(s)') % len(child_mos)
+                    )
+        
+        return True
+    
+    def write(self, vals):
+        """
+        Override write to propagate project number changes to children
+        """
+        res = super(MrpProduction, self).write(vals)
+        
+        # If project number is updated, update all child MOs
+        if 'project_number' in vals:
+            for production in self:
+                if production.project_number:
+                    # Update direct children
+                    if production.child_production_ids:
+                        production.child_production_ids.write({
+                            'project_number': production.project_number
+                        })
+                    
+                    # Update children found by origin
+                    origin_children = self.search([
+                        ('origin', '=', production.name),
+                        ('id', '!=', production.id)
+                    ])
+                    if origin_children:
+                        origin_children.write({
+                            'project_number': production.project_number
+                        })
+        
+        return res
+    
+    def reschedule_work_orders(self):
+        """
+        Reschedule work orders based on current MO state
+        Can be called manually via server action
+        """
+        for production in self:
+            if production.workorder_ids and production.bom_id:
+                # Delete existing work orders
+                production.workorder_ids.unlink()
+                
+                # Regenerate based on state
+                production._generate_work_orders()
+                
+                production.message_post(
+                    body=_('Work orders rescheduled using %s scheduling') % 
+                    ('simple' if production.state == 'quoted' else 'sequential')
+                )
         
         return True
     
@@ -142,6 +214,7 @@ class MrpProduction(models.Model):
                         'is_quoted_child': True,
                         'parent_production_id': self.id,  # Link to parent
                         'company_id': self.company_id.id,
+                        'project_number': self.project_number,  # Copy project number from parent
                     }
                     
                     sub_mo = self.create(sub_mo_vals)
@@ -155,15 +228,33 @@ class MrpProduction(models.Model):
     
     def _generate_work_orders(self):
         """
-        Generate work orders for quoted MOs based on BOM operations
+        Generate work orders for MOs based on BOM operations
+        - For quoted MOs: Simple scheduling (all start at same time)
+        - For confirmed MOs: Sequential scheduling
         """
         self.ensure_one()
         
         if not self.bom_id or not self.bom_id.operation_ids:
             return
         
+        # Determine scheduling method based on MO state
+        if self.state == 'quoted':
+            self._generate_work_orders_simple()
+        else:
+            self._generate_work_orders_sequential()
+    
+    def _generate_work_orders_simple(self):
+        """
+        Generate work orders with simple scheduling (all start at same time)
+        Used for quoted MOs for capacity planning
+        """
+        self.ensure_one()
+        
         # Create work orders for each operation in the BOM
         for operation in self.bom_id.operation_ids:
+            # Calculate duration based on quantity
+            duration_expected = operation.time_cycle * self.product_qty
+            
             wo_vals = {
                 'name': operation.name,
                 'production_id': self.id,
@@ -171,7 +262,34 @@ class MrpProduction(models.Model):
                 'product_uom_id': self.product_uom_id.id,
                 'operation_id': operation.id,
                 'workcenter_id': operation.workcenter_id.id,
-                'duration_expected': operation.time_cycle * self.product_qty,
+                'duration_expected': duration_expected,
+                'state': 'pending',
+                'company_id': self.company_id.id,
+            }
+            
+            self.env['mrp.workorder'].create(wo_vals)
+    
+    def _generate_work_orders_sequential(self):
+        """
+        Generate work orders with sequential scheduling
+        Each operation starts after the previous one finishes
+        For now, creates basic work orders - Odoo will handle date calculations
+        """
+        self.ensure_one()
+        
+        # Create work orders for each operation in sequence
+        for sequence, operation in enumerate(self.bom_id.operation_ids.sorted('sequence')):
+            # Calculate duration for this operation
+            duration_expected = operation.time_cycle * self.product_qty
+            
+            wo_vals = {
+                'name': operation.name,
+                'production_id': self.id,
+                'product_id': self.product_id.id,
+                'product_uom_id': self.product_uom_id.id,
+                'operation_id': operation.id,
+                'workcenter_id': operation.workcenter_id.id,
+                'duration_expected': duration_expected,
                 'state': 'pending',
                 'company_id': self.company_id.id,
             }
@@ -188,12 +306,21 @@ class MrpProduction(models.Model):
         
         # For draft orders going directly to confirmed, use standard behavior
         if draft_orders:
+            # Ensure project number is propagated to child MOs created during confirmation
+            for order in draft_orders:
+                if order.project_number:
+                    # Store project number to propagate after confirmation
+                    order = order.with_context(parent_project_number=order.project_number)
             super(MrpProduction, draft_orders).action_confirm()
         
         # For quoted orders, we need special handling
         if quoted_orders:
-            # First, confirm all child quoted MOs
             for production in quoted_orders:
+                # Delete existing work orders (they were created with simple scheduling)
+                if production.workorder_ids:
+                    production.workorder_ids.unlink()
+                
+                # Confirm all child quoted MOs first
                 if production.child_production_ids:
                     production.child_production_ids.filtered(
                         lambda mo: mo.state == 'quoted'
@@ -202,7 +329,14 @@ class MrpProduction(models.Model):
             # Then confirm the quoted orders using standard behavior
             # But first temporarily set them to draft so the standard method works
             quoted_orders.write({'state': 'draft'})
-            super(MrpProduction, quoted_orders).action_confirm()
+            result = super(MrpProduction, quoted_orders).action_confirm()
+            
+            # Regenerate work orders with sequential scheduling
+            for production in quoted_orders:
+                if production.bom_id and production.bom_id.operation_ids:
+                    production._generate_work_orders_sequential()
+            
+            return result
         
         return True
     
@@ -254,6 +388,9 @@ class MrpProduction(models.Model):
             
             if parent_mo:
                 vals['parent_production_id'] = parent_mo.id
+                # Copy project number from parent if not already set
+                if not vals.get('project_number') and parent_mo.project_number:
+                    vals['project_number'] = parent_mo.project_number
         
         return super(MrpProduction, self).create(vals)
     

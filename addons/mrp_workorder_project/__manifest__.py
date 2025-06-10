@@ -11,7 +11,7 @@
         - Search and filter capabilities
     """,
     'author': 'Your Company',
-    'depends': ['mrp'],
+    'depends': ['mrp', 'mrp_project_number'],
     'data': [
         'security/ir.model.access.csv',
         'views/mrp_workorder_views.xml',
