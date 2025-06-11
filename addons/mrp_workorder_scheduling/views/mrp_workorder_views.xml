@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Add date fields to work order tree view -->
+    <record id="mrp_workorder_tree_view_dates" model="ir.ui.view">
+        <field name="name">mrp.workorder.tree.dates</field>
+        <field name="model">mrp.workorder</field>
+        <field name="inherit_id" ref="mrp.mrp_production_workorder_tree_editable_view"/>
+        <field name="arch" type="xml">
+            <!-- Add planned dates after workcenter -->
+            <xpath expr="//field[@name='workcenter_id']" position="after">
+                <field name="date_planned_start" widget="datetime" optional="show"/>
+                <field name="date_planned_finished" widget="datetime" optional="show"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Add date fields to work order form view -->
+    <record id="mrp_workorder_form_view_dates" model="ir.ui.view">
+        <field name="name">mrp.workorder.form.dates</field>
+        <field name="model">mrp.workorder</field>
+        <field name="inherit_id" ref="mrp.mrp_production_workorder_form_view_inherit"/>
+        <field name="arch" type="xml">
+            <!-- Add scheduling group -->
+            <xpath expr="//sheet/group[1]" position="after">
+                <group string="Scheduling">
+                    <group>
+                        <field name="date_planned_start"/>
+                        <field name="date_planned_finished"/>
+                    </group>
+                    <group>
+                        <field name="duration_expected" widget="float_time"/>
+                    </group>
+                </group>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Create Calendar view for work orders -->
+    <record id="mrp_workorder_calendar_view" model="ir.ui.view">
+        <field name="name">mrp.workorder.calendar</field>
+        <field name="model">mrp.workorder</field>
+        <field name="arch" type="xml">
+            <calendar string="Work Orders Calendar" 
+                      date_start="date_planned_start" 
+                      date_stop="date_planned_finished"
+                      color="workcenter_id"
+                      mode="month">
+                <field name="name"/>
+                <field name="production_id"/>
+                <field name="workcenter_id"/>
+                <field name="state"/>
+            </calendar>
+        </field>
+    </record>
+
+    <!-- Create Timeline view for work orders (simpler alternative to Gantt) -->
+    <record id="mrp_workorder_pivot_view" model="ir.ui.view">
+        <field name="name">mrp.workorder.pivot</field>
+        <field name="model">mrp.workorder</field>
+        <field name="arch" type="xml">
+            <pivot string="Work Orders Analysis">
+                <field name="workcenter_id" type="row"/>
+                <field name="date_planned_start" type="col" interval="week"/>
+                <field name="duration_expected" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <!-- Enhanced search view with date filters -->
+    <record id="mrp_workorder_search_view_dates" model="ir.ui.view">
+        <field name="name">mrp.workorder.search.dates</field>
+        <field name="model">mrp.workorder</field>
+        <field name="inherit_id" ref="mrp.view_mrp_production_work_order_search"/>
+        <field name="arch" type="xml">
+            <!-- Add date filters -->
+            <xpath expr="//search" position="inside">
+                <separator/>
+                <!-- Date range filters using Odoo's built-in date operators -->
+                <filter string="Past Due" name="past_due"
+                        domain="[('date_planned_start', '&lt;', context_today()),
+                                 ('state', 'not in', ['done', 'cancel'])]"/>
+                <filter string="Today" name="today" 
+                        domain="[('date_planned_start', '&gt;=', context_today()),
+                                 ('date_planned_start', '&lt;', context_today() + relativedelta(days=1))]"/>
+                <filter string="Tomorrow" name="tomorrow" 
+                        domain="[('date_planned_start', '&gt;=', context_today() + relativedelta(days=1)),
+                                 ('date_planned_start', '&lt;', context_today() + relativedelta(days=2))]"/>
+                <filter string="Next 7 Days" name="next_7_days"
+                        domain="[('date_planned_start', '&gt;=', context_today()),
+                                 ('date_planned_start', '&lt;=', context_today() + relativedelta(days=7))]"/>
+                <filter string="Next 30 Days" name="next_30_days"
+                        domain="[('date_planned_start', '&gt;=', context_today()),
+                                 ('date_planned_start', '&lt;=', context_today() + relativedelta(days=30))]"/>
+                <separator/>
+                <!-- Period filters -->
+                <filter string="Planned Date" name="filter_date_planned" date="date_planned_start"/>
+            </xpath>
+            
+            <!-- Add group by date -->
+            <xpath expr="//group" position="inside">
+                <filter string="Planned Start Date" name="groupby_date_planned_start" 
+                        context="{'group_by': 'date_planned_start:week'}"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Create our own work order calendar action -->
+    <record id="mrp_workorder_action_calendar" model="ir.actions.act_window">
+        <field name="name">Work Order Calendar</field>
+        <field name="res_model">mrp.workorder</field>
+        <field name="view_mode">calendar,list,form</field>
+        <field name="domain">[('state', 'not in', ['done', 'cancel'])]</field>
+        <field name="context">{'search_default_next_7_days': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No work orders scheduled
+            </p>
+        </field>
+    </record>
+
+    <!-- Add calendar menu item directly under Manufacturing menu -->
+    <menuitem id="menu_mrp_workorder_calendar"
+              name="Work Order Calendar"
+              parent="mrp.menu_mrp_manufacturing"
+              action="mrp_workorder_action_calendar"
+              sequence="25"/>
+</odoo>

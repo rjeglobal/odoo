@@ -8,7 +8,7 @@ class MrpProduction(models.Model):
     # Override the state field completely to control the order
     state = fields.Selection([
         ('draft', 'Draft'),
-        ('quoted', 'Quoted'),  # Now it's in the right position
+        ('quoted', 'Quoted'),  
         ('confirmed', 'Confirmed'),
         ('progress', 'In Progress'),
         ('to_close', 'To Close'),
@@ -142,42 +142,6 @@ class MrpProduction(models.Model):
         
         return True
     
-    def test_find_children(self):
-        """
-        Test method to debug child MO finding
-        """
-        import logging
-        _logger = logging.getLogger(__name__)
-        
-        for production in self:
-            _logger.info(f"\n=== TESTING CHILD SEARCH FOR {production.name} ===")
-            
-            # Method 1: Direct parent-child relationship
-            direct_children = production.child_production_ids
-            _logger.info(f"Direct children via parent_production_id: {direct_children.mapped('name')}")
-            
-            # Method 2: Search by origin
-            all_mos_with_origin = self.search([('origin', '!=', False)])
-            _logger.info(f"\nAll MOs with origin field:")
-            for mo in all_mos_with_origin:
-                if production.name in (mo.origin or ''):
-                    _logger.info(f"  - {mo.name}: origin='{mo.origin}' state={mo.state}")
-            
-            # Try exact match
-            exact_match = self.search([('origin', '=', production.name)])
-            _logger.info(f"\nExact origin match: {exact_match.mapped('name')}")
-            
-            # Try ilike
-            ilike_match = self.search([('origin', 'ilike', production.name)])
-            _logger.info(f"ILIKE origin match: {ilike_match.mapped('name')}")
-            
-            # Manual check
-            all_mos = self.search([])
-            manual_matches = all_mos.filtered(lambda m: m.origin and production.name in m.origin)
-            _logger.info(f"Manual filter matches: {manual_matches.mapped('name')}")
-            
-        return True
-    
     def _create_quoted_sub_mos(self):
         """
         Create sub-MOs for manufactured components in quoted state
@@ -250,6 +214,9 @@ class MrpProduction(models.Model):
         """
         self.ensure_one()
         
+        # Use MO's start date for all work orders
+        wo_date_start = self.date_start or fields.Datetime.now()
+        
         # Create work orders for each operation in the BOM
         for operation in self.bom_id.operation_ids:
             # Calculate duration based on quantity
@@ -263,6 +230,8 @@ class MrpProduction(models.Model):
                 'operation_id': operation.id,
                 'workcenter_id': operation.workcenter_id.id,
                 'duration_expected': duration_expected,
+                'date_planned_start': wo_date_start,
+                'date_planned_finished': wo_date_start + timedelta(minutes=duration_expected),
                 'state': 'pending',
                 'company_id': self.company_id.id,
             }
@@ -273,14 +242,19 @@ class MrpProduction(models.Model):
         """
         Generate work orders with sequential scheduling
         Each operation starts after the previous one finishes
-        For now, creates basic work orders - Odoo will handle date calculations
         """
         self.ensure_one()
+        
+        # Start scheduling from MO's start date
+        current_date = self.date_start or fields.Datetime.now()
         
         # Create work orders for each operation in sequence
         for sequence, operation in enumerate(self.bom_id.operation_ids.sorted('sequence')):
             # Calculate duration for this operation
             duration_expected = operation.time_cycle * self.product_qty
+            
+            # Calculate end date for this work order
+            date_finished = current_date + timedelta(minutes=duration_expected)
             
             wo_vals = {
                 'name': operation.name,
@@ -290,11 +264,20 @@ class MrpProduction(models.Model):
                 'operation_id': operation.id,
                 'workcenter_id': operation.workcenter_id.id,
                 'duration_expected': duration_expected,
+                'date_planned_start': current_date,
+                'date_planned_finished': date_finished,
                 'state': 'pending',
                 'company_id': self.company_id.id,
             }
             
             self.env['mrp.workorder'].create(wo_vals)
+            
+            # Next operation starts when this one ends
+            current_date = date_finished
+        
+        # Update MO's deadline based on last work order
+        if self.workorder_ids and hasattr(self, 'date_deadline'):
+            self.date_deadline = date_finished
     
     def action_confirm(self):
         """
@@ -398,9 +381,6 @@ class MrpProduction(models.Model):
         """
         Force cancel MO and all its children, bypassing all restrictions
         """
-        import logging
-        _logger = logging.getLogger(__name__)
-        
         # Get all MOs to cancel
         all_mos = self.env['mrp.production']
         
@@ -428,9 +408,6 @@ class MrpProduction(models.Model):
         # Get all children
         all_children = find_all_children(self)
         all_mos = all_children | self
-        
-        # Log what we're doing
-        _logger.info(f"Force cancelling {len(all_mos)} MOs: {all_mos.mapped('name')}")
         
         # Cancel in reverse order (children first)
         for mo in sorted(all_mos, key=lambda x: x.id, reverse=True):
