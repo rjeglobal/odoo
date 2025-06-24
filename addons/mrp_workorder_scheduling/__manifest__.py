@@ -13,6 +13,7 @@
     'depends': ['mrp', 'mrp_quoted_state'],
     'data': [
         'views/mrp_workorder_views.xml',
+        # 'views/mrp_workorder_tree_views.xml',
     ],
     'installable': True,
     'application': False,

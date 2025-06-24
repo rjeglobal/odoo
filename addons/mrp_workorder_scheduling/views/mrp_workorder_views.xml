@@ -6,10 +6,29 @@
         <field name="model">mrp.workorder</field>
         <field name="inherit_id" ref="mrp.mrp_production_workorder_tree_editable_view"/>
         <field name="arch" type="xml">
-            <!-- Add planned dates after workcenter -->
+            <!-- Add planned and actual dates after workcenter -->
             <xpath expr="//field[@name='workcenter_id']" position="after">
                 <field name="date_planned_start" widget="datetime" optional="show"/>
                 <field name="date_planned_finished" widget="datetime" optional="show"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Add dynamic side filters for work centers and status in manufacturing/work order list view -->
+    <record id="mrp_workorder_search_view_filters" model="ir.ui.view">
+        <field name="name">mrp.workorder.search.filters</field>
+        <field name="model">mrp.workorder</field>
+        <field name="inherit_id" ref="mrp.view_mrp_production_work_order_search"/>
+        <field name="arch" type="xml">
+            <!-- Add work center filters to main work order search -->
+            <xpath expr="//search" position="inside">
+                <separator/>
+                <filter string="Group by Work Center" name="group_by_workcenter" context="{'group_by': 'workcenter_id'}"/>
+                <separator/>
+                <searchpanel>
+                    <field name="workcenter_id" string="Work Centers" icon="fa-industry" enable_counters="1"/>
+                    <field name="state" string="Status" icon="fa-tasks" enable_counters="1"/>
+                </searchpanel>
             </xpath>
         </field>
     </record>
@@ -23,37 +42,45 @@
             <!-- Add scheduling group -->
             <xpath expr="//sheet/group[1]" position="after">
                 <group string="Scheduling">
-                    <group>
+                    <group string="Planned">
                         <field name="date_planned_start"/>
                         <field name="date_planned_finished"/>
-                    </group>
-                    <group>
                         <field name="duration_expected" widget="float_time"/>
+                    </group>
+                    <group string="Actual">
+                        <field name="date_start" readonly="1"/>
+                        <field name="date_finished" readonly="1"/>
+                        <field name="duration" widget="float_time" readonly="1"/>
                     </group>
                 </group>
             </xpath>
         </field>
     </record>
 
-    <!-- Create Calendar view for work orders -->
+    <!-- Calendar view for work orders showing planned dates -->
     <record id="mrp_workorder_calendar_view" model="ir.ui.view">
         <field name="name">mrp.workorder.calendar</field>
         <field name="model">mrp.workorder</field>
+        <field name="priority">20</field>
         <field name="arch" type="xml">
             <calendar string="Work Orders Calendar" 
                       date_start="date_planned_start" 
                       date_stop="date_planned_finished"
                       color="workcenter_id"
-                      mode="month">
+                      mode="day"
+                      event_open_popup="true"
+                      quick_create="false">
                 <field name="name"/>
                 <field name="production_id"/>
-                <field name="workcenter_id"/>
+                <field name="workcenter_id" filters="1" invisible="1"/>
                 <field name="state"/>
+                <field name="date_planned_start"/>
+                <field name="date_planned_finished"/>
             </calendar>
         </field>
     </record>
 
-    <!-- Create Timeline view for work orders (simpler alternative to Gantt) -->
+    <!-- Pivot view for work orders analysis -->
     <record id="mrp_workorder_pivot_view" model="ir.ui.view">
         <field name="name">mrp.workorder.pivot</field>
         <field name="model">mrp.workorder</field>
@@ -66,51 +93,70 @@
         </field>
     </record>
 
-    <!-- Enhanced search view with date filters -->
-    <record id="mrp_workorder_search_view_dates" model="ir.ui.view">
-        <field name="name">mrp.workorder.search.dates</field>
+    <!-- Server action to populate planned dates -->
+    <record id="action_populate_planned_dates" model="ir.actions.server">
+        <field name="name">Populate Planned Dates</field>
+        <field name="model_id" ref="mrp.model_mrp_workorder"/>
+        <field name="binding_model_id" ref="mrp.model_mrp_workorder"/>
+        <field name="binding_view_types">list,form</field>
+        <field name="state">code</field>
+        <field name="code">
+records.populate_planned_dates()
+        </field>
+    </record>
+
+    <!-- Server action for scheduling selected work orders -->
+    <record id="action_schedule_selected_workorders" model="ir.actions.server">
+        <field name="name">Schedule Selected Work Orders</field>
+        <field name="model_id" ref="mrp.model_mrp_workorder"/>
+        <field name="binding_model_id" ref="mrp.model_mrp_workorder"/>
+        <field name="binding_view_types">list</field>
+        <field name="state">code</field>
+        <field name="code">
+action = records.action_schedule_selected_workorders()
+        </field>
+    </record>
+
+    <!-- Add scheduling status to tree view -->
+    <record id="mrp_workorder_tree_view_scheduling_status" model="ir.ui.view">
+        <field name="name">mrp.workorder.tree.scheduling.status</field>
         <field name="model">mrp.workorder</field>
-        <field name="inherit_id" ref="mrp.view_mrp_production_work_order_search"/>
+        <field name="inherit_id" ref="mrp_workorder_tree_view_dates"/>
         <field name="arch" type="xml">
-            <!-- Add date filters -->
-            <xpath expr="//search" position="inside">
-                <separator/>
-                <!-- Date range filters using Odoo's built-in date operators -->
-                <filter string="Past Due" name="past_due"
-                        domain="[('date_planned_start', '&lt;', context_today()),
-                                 ('state', 'not in', ['done', 'cancel'])]"/>
-                <filter string="Today" name="today" 
-                        domain="[('date_planned_start', '&gt;=', context_today()),
-                                 ('date_planned_start', '&lt;', context_today() + relativedelta(days=1))]"/>
-                <filter string="Tomorrow" name="tomorrow" 
-                        domain="[('date_planned_start', '&gt;=', context_today() + relativedelta(days=1)),
-                                 ('date_planned_start', '&lt;', context_today() + relativedelta(days=2))]"/>
-                <filter string="Next 7 Days" name="next_7_days"
-                        domain="[('date_planned_start', '&gt;=', context_today()),
-                                 ('date_planned_start', '&lt;=', context_today() + relativedelta(days=7))]"/>
-                <filter string="Next 30 Days" name="next_30_days"
-                        domain="[('date_planned_start', '&gt;=', context_today()),
-                                 ('date_planned_start', '&lt;=', context_today() + relativedelta(days=30))]"/>
-                <separator/>
-                <!-- Period filters -->
-                <filter string="Planned Date" name="filter_date_planned" date="date_planned_start"/>
-            </xpath>
-            
-            <!-- Add group by date -->
-            <xpath expr="//group" position="inside">
-                <filter string="Planned Start Date" name="groupby_date_planned_start" 
-                        context="{'group_by': 'date_planned_start:week'}"/>
+            <xpath expr="//field[@name='date_planned_finished']" position="after">
+                <field name="scheduling_status" widget="badge" 
+                       decoration-success="scheduling_status == 'scheduled'"
+                       decoration-warning="scheduling_status == 'unscheduled'"
+                       decoration-danger="scheduling_status == 'overdue'"
+                       optional="show"/>
             </xpath>
         </field>
     </record>
 
-    <!-- Create our own work order calendar action -->
+    <!-- TEMPORARILY COMMENTED OUT - Add scheduling buttons to form view 
+    <record id="mrp_workorder_form_view_scheduling_buttons_v2" model="ir.ui.view">
+        <field name="name">mrp.workorder.form.scheduling.buttons.v2</field>
+        <field name="model">mrp.workorder</field>
+        <field name="inherit_id" ref="mrp_workorder_form_view_dates"/>
+        <field name="arch" type="xml">
+            <xpath expr="//header" position="inside">
+                <button name="button_schedule_sequential" string="Schedule Sequential" 
+                        type="object" class="btn-primary"
+                        invisible="scheduling_status == 'scheduled'"/>
+            </xpath>
+        </field>
+    </record>
+    -->
+
+    <!-- Action for work order calendar -->
     <record id="mrp_workorder_action_calendar" model="ir.actions.act_window">
         <field name="name">Work Order Calendar</field>
         <field name="res_model">mrp.workorder</field>
         <field name="view_mode">calendar,list,form</field>
+        <field name="view_id" ref="mrp_workorder_calendar_view"/>
+        <field name="search_view_id" ref="mrp_workorder_search_view_filters"/>
         <field name="domain">[('state', 'not in', ['done', 'cancel'])]</field>
-        <field name="context">{'search_default_next_7_days': 1}</field>
+        <field name="context">{}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
                 No work orders scheduled
@@ -118,7 +164,7 @@
         </field>
     </record>
 
-    <!-- Add calendar menu item directly under Manufacturing menu -->
+    <!-- Menu item -->
     <menuitem id="menu_mrp_workorder_calendar"
               name="Work Order Calendar"
               parent="mrp.menu_mrp_manufacturing"
