@@ -230,8 +230,8 @@ class MrpProduction(models.Model):
                 'operation_id': operation.id,
                 'workcenter_id': operation.workcenter_id.id,
                 'duration_expected': duration_expected,
-                'date_planned_start': wo_date_start,
-                'date_planned_finished': wo_date_start + timedelta(minutes=duration_expected),
+                # 'date_planned_start': wo_date_start,
+                # 'date_planned_finished': wo_date_start + timedelta(minutes=duration_expected),
                 'state': 'pending',
                 'company_id': self.company_id.id,
             }
@@ -264,8 +264,8 @@ class MrpProduction(models.Model):
                 'operation_id': operation.id,
                 'workcenter_id': operation.workcenter_id.id,
                 'duration_expected': duration_expected,
-                'date_planned_start': current_date,
-                'date_planned_finished': date_finished,
+                # 'date_planned_start': current_date,
+                # 'date_planned_finished': date_finished,
                 'state': 'pending',
                 'company_id': self.company_id.id,
             }

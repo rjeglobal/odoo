@@ -8,7 +8,6 @@ import logging
 _logger = logging.getLogger(__name__)
 
 def to_utc_naive(dt):
-    """Convert Melbourne datetime to UTC naive for proper Odoo storage"""
     melbourne_tz = timezone('Australia/Melbourne')
     
     if dt is None:
@@ -25,7 +24,6 @@ def to_utc_naive(dt):
         return dt_utc.replace(tzinfo=None)
 
 def from_utc_to_melbourne_naive(dt):
-    """Convert UTC naive datetime to Melbourne naive for calculations"""
     melbourne_tz = timezone('Australia/Melbourne')
     
     if dt is None:
@@ -42,13 +40,11 @@ def from_utc_to_melbourne_naive(dt):
         return dt_melbourne.replace(tzinfo=None)
 
 def melbourne_now():
-    """Get current time in Melbourne timezone as naive datetime"""
     melbourne_tz = timezone('Australia/Melbourne')
     now_melbourne = datetime.now(melbourne_tz)
     return now_melbourne.replace(tzinfo=None)
 
 def melbourne_localize(dt):
-    """Convert naive datetime to Melbourne timezone-aware datetime"""
     if dt is None:
         return None
     melbourne_tz = timezone('Australia/Melbourne')
@@ -68,7 +64,6 @@ class MrpWorkorderSequentialScheduling(models.Model):
 
     @api.depends('date_planned_start', 'date_planned_finished')
     def _compute_scheduling_status(self):
-        """Compute scheduling status using Melbourne time"""
         melbourne_now_time = melbourne_now()
         for record in self:
             if not record.date_planned_start:
@@ -78,484 +73,436 @@ class MrpWorkorderSequentialScheduling(models.Model):
             else:
                 record.scheduling_status = 'overdue'
 
+    def _get_scheduling_status_color(self):
+        for record in self:
+            if record.scheduling_status == 'unscheduled':
+                return 'grey'
+            elif record.scheduling_status == 'scheduled':
+                return 'green'
+            elif record.scheduling_status == 'overdue':
+                return 'red'
+        return 'black'
+
     def button_schedule_sequential(self):
-        """Schedule this work order using Melbourne time"""
-        if not self.workcenter_id:
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {
-                    'type': 'warning',
-                    'message': f'Work order {self.name} has no work center assigned',
-                    'sticky': False,
-                }
-            }
-
-        if not self.workcenter_id.resource_calendar_id:
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {
-                    'type': 'warning',
-                    'message': f'Work center {self.workcenter_id.name} has no calendar defined',
-                    'sticky': False,
-                }
-            }
-
-        next_available_time = self._find_next_available_slot(self.workcenter_id)
-        if not next_available_time:
-            next_available_time = melbourne_localize(melbourne_now())
-
-        duration_minutes = self.duration_expected or 60.0
-        start_time, end_time = self._get_next_working_time(
-            self.workcenter_id, next_available_time, duration_minutes
-        )
-
-        if not start_time or not end_time:
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {
-                    'type': 'warning',
-                    'message': f'Could not find suitable working time for {self.name}',
-                    'sticky': False,
-                }
-            }
-
-        # Store as UTC naive (Odoo standard) - start_time and end_time are Melbourne naive
-        self.date_planned_start = to_utc_naive(start_time)
-        self.date_planned_finished = to_utc_naive(end_time)
-
-        return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'type': 'success',
-                'message': f'Work order {self.name} scheduled at {start_time.strftime("%Y-%m-%d %H:%M")} Melbourne time',
-                'sticky': False,
-            }
-        }
-
-    def button_reschedule_dependent(self):
-        """Reschedule dependent work orders using Melbourne time"""
-        if not self.workcenter_id or not self.date_planned_finished:
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {
-                    'type': 'warning',
-                    'message': 'Cannot reschedule: missing work center or end date',
-                    'sticky': False,
-                }
-            }
-
-        dependent_workorders = self.search([
-            ('workcenter_id', '=', self.workcenter_id.id),
-            ('date_planned_start', '>=', self.date_planned_start),
-            ('id', '!=', self.id),
-            ('state', 'not in', ['done', 'cancel'])
-        ], order='date_planned_start asc')
-
-        count = 0
-        # Convert to Melbourne timezone-aware for calculations
-        current_end_time = melbourne_localize(self.date_planned_finished) + timedelta(minutes=15)
-        
-        for workorder in dependent_workorders:
-            planned_start = melbourne_localize(workorder.date_planned_start)
-                
-            if planned_start < current_end_time:
-                duration_minutes = workorder.duration_expected or 60.0
-                
-                # Find next working time slot
-                new_start, new_end = workorder._get_next_working_time(
-                    workorder.workcenter_id, current_end_time, duration_minutes
-                )
-                
-                if new_start and new_end:
-                    workorder.date_planned_start = to_utc_naive(new_start)
-                    workorder.date_planned_finished = to_utc_naive(new_end)
-                    count += 1
-                    current_end_time = new_end + timedelta(minutes=15)
-
-        return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'type': 'success',
-                'message': f'Rescheduled {count} dependent work orders',
-                'sticky': False,
-            }
-        }
-
-    def _get_next_working_time(self, workcenter, start_datetime, duration_minutes):
-        """Find working time using Melbourne naive timezone throughout"""
-        calendar = workcenter.resource_calendar_id
-        melbourne_tz = pytz.timezone('Australia/Melbourne')
-
-        if not calendar:
-            _logger.error(f"No calendar found for {workcenter.name}")
-            return None, None
-
-        _logger.info(f"Searching for {duration_minutes} minute slot for {workcenter.name} starting from {start_datetime}")
-
-        # Convert everything to Melbourne naive time
-        if isinstance(start_datetime, str):
-            start_dt = fields.Datetime.from_string(start_datetime)
-        else:
-            start_dt = start_datetime
-            
-        # If timezone-aware, convert to Melbourne naive
-        if start_dt.tzinfo is not None:
-            start_dt = start_dt.astimezone(melbourne_tz).replace(tzinfo=None)
-
-        # Never schedule in the past (Melbourne naive time)
-        now_melbourne_naive = melbourne_now()
-        if start_dt < now_melbourne_naive:
-            start_dt = now_melbourne_naive
-            _logger.info(f"Adjusted start time to Melbourne now: {start_dt}")
-
-        # Convert back to timezone-aware for calendar API
-        start_dt_aware = melbourne_localize(start_dt)
-
-        search_weeks = 1
-        while search_weeks <= 52:  # Maximum 1 year search
-            search_end_aware = start_dt_aware + timedelta(weeks=search_weeks)
-            
-            try:
-                # Get working intervals (calendar API needs timezone-aware)
-                intervals = calendar._work_intervals_batch(start_dt_aware, search_end_aware)[False]
-                _logger.info(f"Found {len(intervals)} working intervals for {workcenter.name} in {search_weeks} weeks")
-                
-                # Try to find a single interval that can fit the entire job
-                for interval_start, interval_end, _attendances in intervals:
-                    # Convert calendar intervals to Melbourne naive
-                    interval_start_naive = interval_start.astimezone(melbourne_tz).replace(tzinfo=None)
-                    interval_end_naive = interval_end.astimezone(melbourne_tz).replace(tzinfo=None)
-                    
-                    # Skip past intervals
-                    if interval_end_naive <= now_melbourne_naive:
-                        continue
-                    
-                    # Ensure we don't start in the past
-                    actual_start_naive = max(interval_start_naive, start_dt, now_melbourne_naive)
-                    
-                    if actual_start_naive >= interval_end_naive:
-                        continue
-
-                    # Check if the entire job fits in this interval
-                    job_end_time_naive = actual_start_naive + timedelta(minutes=duration_minutes)
-                    if job_end_time_naive <= interval_end_naive:
-                        # Check for overlapping work orders (all times stored as Melbourne naive)
-                        overlapping_wos = self.env['mrp.workorder'].search([
-                            ('workcenter_id', '=', workcenter.id),
-                            ('date_planned_start', '<', job_end_time_naive),
-                            ('date_planned_finished', '>', actual_start_naive),
-                            ('date_planned_finished', '>', now_melbourne_naive),
-                            ('id', '!=', self.id),
-                            ('state', 'not in', ['done', 'cancel'])
-                        ])
-
-                        if not overlapping_wos:
-                            _logger.info(f"SUCCESS: Scheduled {workcenter.name} in single interval: {actual_start_naive} to {job_end_time_naive}")
-                            return actual_start_naive, job_end_time_naive
-
-                # If single interval doesn't work, try spanning intervals
-                job_start_time_naive = None
-                current_time_naive = start_dt
-                accumulated_minutes = 0
-
-                for interval_start, interval_end, _attendances in intervals:
-                    # Convert calendar intervals to Melbourne naive
-                    interval_start_naive = interval_start.astimezone(melbourne_tz).replace(tzinfo=None)
-                    interval_end_naive = interval_end.astimezone(melbourne_tz).replace(tzinfo=None)
-                    
-                    # Skip past intervals
-                    if interval_end_naive <= now_melbourne_naive:
-                        continue
-                    
-                    # Ensure we don't start in the past
-                    actual_start_naive = max(interval_start_naive, current_time_naive, now_melbourne_naive)
-                    
-                    if actual_start_naive >= interval_end_naive:
-                        continue
-
-                    # Check for overlapping work orders (all times stored as Melbourne naive)
-                    overlapping_wos = self.env['mrp.workorder'].search([
-                        ('workcenter_id', '=', workcenter.id),
-                        ('date_planned_start', '<', interval_end_naive),
-                        ('date_planned_finished', '>', actual_start_naive),
-                        ('date_planned_finished', '>', now_melbourne_naive),
-                        ('id', '!=', self.id),
-                        ('state', 'not in', ['done', 'cancel'])
-                    ])
-
-                    if overlapping_wos:
-                        # Find gaps between work orders
-                        sorted_wos = overlapping_wos.sorted('date_planned_start')
-                        gap_start_naive = actual_start_naive
-                        
-                        for wo in sorted_wos:
-                            # Work order dates are stored as Melbourne naive (GMT+10)
-                            wo_start_naive = wo.date_planned_start
-                            wo_end_naive = wo.date_planned_finished
-                            
-                            # Skip past work orders
-                            if wo_end_naive <= now_melbourne_naive:
-                                continue
-                            
-                            # Check gap before this work order
-                            if gap_start_naive < wo_start_naive:
-                                gap_end_naive = min(wo_start_naive, interval_end_naive)
-                                gap_minutes = (gap_end_naive - gap_start_naive).total_seconds() / 60.0
-                                
-                                if gap_minutes > 0:
-                                    if job_start_time_naive is None:
-                                        job_start_time_naive = gap_start_naive
-                                    
-                                    accumulated_minutes += gap_minutes
-                                    
-                                    if accumulated_minutes >= duration_minutes:
-                                        job_end_time_naive = job_start_time_naive + timedelta(minutes=duration_minutes)
-                                        _logger.info(f"SUCCESS: Scheduled {workcenter.name} spanning intervals: {job_start_time_naive} to {job_end_time_naive}")
-                                        return job_start_time_naive, job_end_time_naive
-                            
-                            gap_start_naive = max(wo_end_naive + timedelta(minutes=15), now_melbourne_naive)
-                        
-                        # Check gap after all work orders
-                        if gap_start_naive < interval_end_naive:
-                            gap_minutes = (interval_end_naive - gap_start_naive).total_seconds() / 60.0
-                            if gap_minutes > 0:
-                                if job_start_time_naive is None:
-                                    job_start_time_naive = gap_start_naive
-                                
-                                accumulated_minutes += gap_minutes
-                                
-                                if accumulated_minutes >= duration_minutes:
-                                    job_end_time_naive = job_start_time_naive + timedelta(minutes=duration_minutes)
-                                    _logger.info(f"SUCCESS: Scheduled {workcenter.name} spanning intervals: {job_start_time_naive} to {job_end_time_naive}")
-                                    return job_start_time_naive, job_end_time_naive
-                    else:
-                        # No overlapping work orders
-                        available_minutes = (interval_end_naive - actual_start_naive).total_seconds() / 60.0
-                        
-                        if available_minutes > 0:
-                            if job_start_time_naive is None:
-                                job_start_time_naive = actual_start_naive
-                            
-                            accumulated_minutes += available_minutes
-                            
-                            if accumulated_minutes >= duration_minutes:
-                                job_end_time_naive = job_start_time_naive + timedelta(minutes=duration_minutes)
-                                _logger.info(f"SUCCESS: Scheduled {workcenter.name} spanning intervals: {job_start_time_naive} to {job_end_time_naive}")
-                                return job_start_time_naive, job_end_time_naive
-                    
-                    current_time_naive = max(interval_end_naive + timedelta(minutes=1), now_melbourne_naive)
-
-                # Expand search if needed
-                search_weeks *= 2
-                _logger.info(f"Need {duration_minutes} minutes, found {accumulated_minutes:.1f} minutes for {workcenter.name}, expanding search to {search_weeks} weeks")
-
-            except Exception as e:
-                _logger.error(f"Calendar scheduling failed for {workcenter.name}: {e}")
-                import traceback
-                _logger.error(traceback.format_exc())
-                break
-
-        _logger.error(f"FAILED: Could not find {duration_minutes} minutes of working time for {workcenter.name}")
-        return None, None
-
-    def _find_next_available_slot(self, workcenter, after_datetime=None):
-        """Find next available slot in Melbourne time"""
-        melbourne_tz = timezone('Australia/Melbourne')
-        now_melbourne = datetime.now(melbourne_tz)
-        
-        if not after_datetime:
-            after_datetime = now_melbourne
-        else:
-            if isinstance(after_datetime, str):
-                after_datetime = fields.Datetime.from_string(after_datetime)
-            if after_datetime.tzinfo is None:
-                after_datetime = melbourne_localize(after_datetime)
-        
-        # Never search in the past
-        after_datetime = max(after_datetime, now_melbourne)
-        
-        calendar = workcenter.resource_calendar_id
-        if not calendar:
-            return None
-
-        # Get future work orders only (all stored as Melbourne naive)
-        context_ids = self._context.get('active_ids', [])
-        scheduled_workorders = self.search([
-            ('workcenter_id', '=', workcenter.id),
-            ('date_planned_start', '!=', False),
-            ('date_planned_finished', '!=', False),
-            ('date_planned_finished', '>', melbourne_now()),  # Only future work orders
-            ('state', 'not in', ['done', 'cancel']),
-            ('id', 'not in', context_ids)
-        ], order='date_planned_finished desc', limit=1)
-
-        if scheduled_workorders:
-            # Work orders are stored as Melbourne naive, convert to timezone-aware for calculation
-            latest_end = melbourne_localize(scheduled_workorders[0].date_planned_finished)
-            next_slot = max(latest_end + timedelta(minutes=15), now_melbourne)
-        else:
-            next_slot = now_melbourne
-
-        # Convert next_slot to naive for comparison
-        next_slot_naive = next_slot.replace(tzinfo=None)
-        
-        search_weeks = 1
-        while search_weeks <= 52:  # Maximum 1 year search
-            search_end = next_slot + timedelta(weeks=search_weeks)
-
-            try:
-                intervals = calendar._work_intervals_batch(next_slot, search_end)[False]
-
-                for interval_start, interval_end, _attendances in intervals:
-                    # Convert calendar intervals to Melbourne naive
-                    interval_start_naive = interval_start.astimezone(melbourne_tz).replace(tzinfo=None)
-                    interval_end_naive = interval_end.astimezone(melbourne_tz).replace(tzinfo=None)
-                    
-                    # Skip past intervals
-                    if interval_end_naive <= now_melbourne_naive:
-                        continue
-                    
-                    effective_start_naive = max(interval_start_naive, next_slot_naive, now_melbourne_naive)
-                    
-                    if effective_start_naive >= interval_end_naive:
-                        continue
-                    
-                    if effective_start_naive >= next_slot_naive:
-                        # Check for overlaps (all times stored as Melbourne naive GMT+10)
-                        overlapping_wos = self.env['mrp.workorder'].search([
-                            ('workcenter_id', '=', workcenter.id),
-                            ('date_planned_start', '<', interval_end_naive),
-                            ('date_planned_finished', '>', effective_start_naive),
-                            ('date_planned_finished', '>', melbourne_now()),
-                            ('state', 'not in', ['done', 'cancel'])
-                        ])
-                        
-                        if not overlapping_wos:
-                            _logger.info(f"Next available slot for {workcenter.name}: {effective_start_naive}")
-                            return effective_start_naive
-
-                # Expand search
-                search_weeks *= 2
-                _logger.info(f"Expanding slot search for {workcenter.name} to {search_weeks} weeks")
-
-            except Exception as e:
-                _logger.error(f"Calendar slot finding failed for {workcenter.name}: {e}")
-                break
-
-        _logger.warning(f"No working time slots available for {workcenter.name} in {search_weeks} weeks")
-        return None
-
-    @api.model
-    def action_schedule_selected_workorders(self):
-        """Schedule selected work orders using Melbourne time"""
-        if not self._context.get('active_ids'):
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {
-                    'type': 'warning',
-                    'message': 'Please select work orders to schedule',
-                    'sticky': False,
-                }
-            }
-
-        workorders = self.browse(self._context['active_ids'])
-        to_schedule = workorders.filtered(lambda w: w.state not in ['done', 'cancel'])
-
-        if not to_schedule:
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {
-                    'type': 'info',
-                    'message': 'No schedulable work orders found',
-                    'sticky': False,
-                }
-            }
-
-        scheduled_count = 0
-        failed_count = 0
-        workcenters = to_schedule.mapped('workcenter_id').filtered(lambda wc: wc)
-
-        _logger.info(f"Starting to schedule {len(to_schedule)} work orders across {len(workcenters)} work centers")
-
-        for workcenter in workcenters:
-            _logger.info(f"Processing work center: {workcenter.name}")
-            
-            if not workcenter.resource_calendar_id:
-                failed_wo_count = len(to_schedule.filtered(lambda w: w.workcenter_id == workcenter))
-                failed_count += failed_wo_count
-                _logger.warning(f"Skipping {failed_wo_count} work orders at {workcenter.name} - no calendar")
+        """Schedule work orders sequentially based on MO date_start"""
+        for workorder in self:
+            if not workorder.production_id:
+                _logger.warning(f"Work order {workorder.name} has no production order")
                 continue
-
-            wc_workorders = to_schedule.filtered(lambda w: w.workcenter_id == workcenter)
+                
+            if not workorder.workcenter_id:
+                _logger.warning(f"Work order {workorder.name} has no work center assigned")
+                continue
+                
+            # Get MO scheduled start date as base
+            mo = workorder.production_id
+            if not mo.date_start:
+                _logger.warning(f"Manufacturing Order {mo.name} has no scheduled start date")
+                continue
             
-            # Clear existing schedules
-            _logger.info(f"Clearing and rescheduling {len(wc_workorders)} work orders at {workcenter.name}")
-            wc_workorders.write({
-                'date_planned_start': False,
-                'date_planned_finished': False,
+            # Schedule this work order and all related work orders sequentially
+            workorder._schedule_mo_workorders()
+
+    def _schedule_mo_workorders(self):
+        """Schedule all work orders for this MO sequentially based on MO date_start"""
+        mo = self.production_id
+        
+        # Get all work orders for this MO, sorted by sequence
+        workorders = mo.workorder_ids.sorted('sequence')
+        
+        if not workorders:
+            return
+            
+        # Use MO date_start as base for scheduling
+        if not mo.date_start:
+            _logger.warning(f"No date_start found for MO {mo.name}")
+            return
+            
+        # Convert MO date_start to Melbourne time for scheduling
+        base_start_date = from_utc_to_melbourne_naive(mo.date_start)
+        current_start_date = base_start_date
+        
+        _logger.info(f"Scheduling {len(workorders)} work orders for MO {mo.name} starting from {base_start_date}")
+        
+        for workorder in workorders:
+            # Find next available slot for this work order considering work center capacity
+            planned_start = workorder._find_next_available_slot(current_start_date)
+            planned_end = workorder._calculate_planned_end_date(planned_start)
+            
+            # Update planned dates (convert back to UTC for storage)
+            workorder.write({
+                'date_planned_start': to_utc_naive(planned_start),
+                'date_planned_finished': to_utc_naive(planned_end)
             })
             
-            # Sort by MO number
-            wc_workorders_sorted = []
-            for wo in wc_workorders:
-                mo_name = wo.production_id.name if wo.production_id else wo.name
-                wc_workorders_sorted.append((mo_name, wo))
-            wc_workorders_sorted.sort(key=lambda x: x[0])
-            sorted_workorders = [item[1] for item in wc_workorders_sorted]
+            _logger.info(f"Scheduled work order {workorder.name}: {planned_start} - {planned_end}")
+            
+            # Next work order starts after this one finishes (minimum)
+            # But may start later if work center is busy
+            current_start_date = planned_end
 
-            # Start from Melbourne current time (naive)
-            current_slot_time = melbourne_now()
-            _logger.info(f"Starting scheduling from: {current_slot_time} Melbourne time")
-
-            for workorder in sorted_workorders:
-                duration_minutes = workorder.duration_expected or 60.0
-                _logger.info(f"Scheduling {workorder.name} (duration: {duration_minutes} minutes)")
-                
-                start_time, end_time = workorder._get_next_working_time(
-                    workcenter, current_slot_time, duration_minutes
+    def _calculate_planned_end_date(self, start_date):
+        """Calculate planned end date based on expected duration and work center calendar"""
+        if not self.duration_expected:
+            # Default to 1 hour if no duration specified
+            duration_hours = 1.0
+        else:
+            duration_hours = self.duration_expected / 60.0
+        
+        # Check if work center has a calendar (try different possible field names)
+        calendar = None
+        if self.workcenter_id:
+            # Try common calendar field names
+            if hasattr(self.workcenter_id, 'calendar_id') and self.workcenter_id.calendar_id:
+                calendar = self.workcenter_id.calendar_id
+            elif hasattr(self.workcenter_id, 'resource_calendar_id') and self.workcenter_id.resource_calendar_id:
+                calendar = self.workcenter_id.resource_calendar_id
+            elif hasattr(self.workcenter_id, 'working_time_id') and self.workcenter_id.working_time_id:
+                calendar = self.workcenter_id.working_time_id
+        
+        if calendar:
+            # Use work center calendar for accurate scheduling
+            # Convert to UTC for calendar calculation
+            start_utc = to_utc_naive(start_date)
+            
+            try:
+                # Plan hours using calendar
+                end_utc = calendar.plan_hours(
+                    duration_hours,
+                    start_utc,
+                    compute_leaves=True
                 )
                 
-                if start_time and end_time:
-                    # Store as UTC naive (Odoo standard) - start_time and end_time are Melbourne naive
-                    workorder.date_planned_start = to_utc_naive(start_time)
-                    workorder.date_planned_finished = to_utc_naive(end_time)
-                    
-                    current_slot_time = end_time + timedelta(minutes=15)
-                    scheduled_count += 1
-                    
-                    _logger.info(f"SUCCESS: Scheduled {workorder.name} (MO: {workorder.production_id.name if workorder.production_id else 'N/A'}) "
-                               f"at {workcenter.name} from {start_time} to {end_time} Melbourne time")
-                else:
-                    failed_count += 1
-                    _logger.error(f"FAILED: Could not schedule {workorder.name} - no working time available")
-
-        _logger.info(f"Scheduling complete: {scheduled_count} scheduled, {failed_count} failed")
-
-        message_parts = []
-        if scheduled_count > 0:
-            message_parts.append(f"Scheduled {scheduled_count} work orders")
-        if failed_count > 0:
-            message_parts.append(f"Failed to schedule {failed_count} work orders")
-
-        if message_parts:
-            message = " and ".join(message_parts) + f" across {len(workcenters)} work centers (Melbourne time)"
+                # Convert back to Melbourne time
+                return from_utc_to_melbourne_naive(end_utc)
+            except Exception as e:
+                _logger.warning(f"Calendar calculation failed for work order {self.name}: {e}")
+                # Fallback to simple duration addition
+                return start_date + timedelta(hours=duration_hours)
         else:
-            message = "No work orders were processed"
+            # Fallback: simple duration addition
+            _logger.info(f"No calendar found for work center {self.workcenter_id.name if self.workcenter_id else 'None'}, using simple duration calculation")
+            return start_date + timedelta(hours=duration_hours)
 
+    def _find_next_available_slot(self, earliest_start):
+        """Find the next available time slot for this work order considering work center capacity"""
+        if not self.workcenter_id:
+            _logger.warning(f"No work center assigned to work order {self.name}")
+            return earliest_start
+        
+        # Calculate duration needed
+        if not self.duration_expected:
+            duration_hours = 1.0
+        else:
+            duration_hours = self.duration_expected / 60.0
+        
+        # Start checking from the earliest possible start time
+        check_start = earliest_start
+        max_iterations = 100  # Prevent infinite loops
+        iteration = 0
+        
+        while iteration < max_iterations:
+            check_end = self._calculate_planned_end_date(check_start)
+            
+            # Check if this time slot is available
+            if self._is_time_slot_available(check_start, check_end):
+                return check_start
+            
+            # Find the next conflict and move past it
+            next_available = self._find_next_gap_after_conflicts(check_start, check_end)
+            check_start = next_available
+            
+            iteration += 1
+        
+        _logger.warning(f"Could not find available slot for work order {self.name} after {max_iterations} iterations")
+        return earliest_start
+
+    def _is_time_slot_available(self, start_time, end_time):
+        """Check if the time slot is available on the work center"""
+        if not self.workcenter_id:
+            return True
+        
+        # Convert to UTC for database queries
+        start_utc = to_utc_naive(start_time)
+        end_utc = to_utc_naive(end_time)
+        
+        # Check for conflicting work orders on the same work center
+        conflicts = self.env['mrp.workorder'].search([
+            ('workcenter_id', '=', self.workcenter_id.id),
+            ('id', '!=', self.id),  # Exclude current work order
+            ('date_planned_start', '!=', False),
+            ('date_planned_finished', '!=', False),
+            ('state', 'not in', ['done', 'cancel']),  # Only active work orders
+            # Check for time overlap
+            '|',
+            # Conflict case 1: Existing work order starts during our slot
+            '&', ('date_planned_start', '>=', start_utc), ('date_planned_start', '<', end_utc),
+            '|',
+            # Conflict case 2: Existing work order ends during our slot  
+            '&', ('date_planned_finished', '>', start_utc), ('date_planned_finished', '<=', end_utc),
+            '|',
+            # Conflict case 3: Existing work order completely contains our slot
+            '&', ('date_planned_start', '<=', start_utc), ('date_planned_finished', '>=', end_utc),
+            # Conflict case 4: Our slot completely contains existing work order
+            '&', ('date_planned_start', '>=', start_utc), ('date_planned_finished', '<=', end_utc)
+        ])
+        
+        if conflicts:
+            conflict_names = ', '.join(conflicts.mapped('name'))
+            _logger.info(f"Time slot {start_time} - {end_time} conflicts with work orders: {conflict_names}")
+            return False
+        
+        return True
+
+    def _find_next_gap_after_conflicts(self, start_time, end_time):
+        """Find the next available gap after current conflicts"""
+        if not self.workcenter_id:
+            return end_time
+        
+        # Convert to UTC for database queries
+        start_utc = to_utc_naive(start_time)
+        end_utc = to_utc_naive(end_time)
+        
+        # Get all conflicting work orders sorted by end time
+        conflicts = self.env['mrp.workorder'].search([
+            ('workcenter_id', '=', self.workcenter_id.id),
+            ('id', '!=', self.id),
+            ('date_planned_start', '!=', False),
+            ('date_planned_finished', '!=', False),
+            ('state', 'not in', ['done', 'cancel']),
+            ('date_planned_start', '<', end_utc),  # Starts before our end
+            ('date_planned_finished', '>', start_utc),  # Ends after our start
+        ], order='date_planned_finished desc')
+        
+        if not conflicts:
+            return start_time
+        
+        # Find the latest ending conflict
+        latest_end = conflicts[0].date_planned_finished
+        
+        # Convert back to Melbourne time and add small buffer
+        next_available = from_utc_to_melbourne_naive(latest_end)
+        
+        # Add a small buffer to avoid scheduling conflicts due to rounding
+        next_available += timedelta(minutes=5)
+        
+        _logger.info(f"Next available slot for work center {self.workcenter_id.name}: {next_available}")
+        return next_available
+
+    def _get_workcenter_utilization(self, start_date, end_date):
+        """Get work center utilization for a given period"""
+        if not self.workcenter_id:
+            return 0.0
+        
+        start_utc = to_utc_naive(start_date)
+        end_utc = to_utc_naive(end_date)
+        
+        scheduled_workorders = self.env['mrp.workorder'].search([
+            ('workcenter_id', '=', self.workcenter_id.id),
+            ('date_planned_start', '!=', False),
+            ('date_planned_finished', '!=', False),
+            ('state', 'not in', ['done', 'cancel']),
+            ('date_planned_start', '<', end_utc),
+            ('date_planned_finished', '>', start_utc),
+        ])
+        
+        total_scheduled_minutes = sum(wo.duration_expected or 60 for wo in scheduled_workorders)
+        period_minutes = (end_date - start_date).total_seconds() / 60
+        
+        if period_minutes > 0:
+            utilization = min(100.0, (total_scheduled_minutes / period_minutes) * 100)
+        else:
+            utilization = 0.0
+        
+        return utilization
+
+    def action_reschedule_from_mo(self):
+        """Action to reschedule all work orders based on current MO date_start"""
+        for workorder in self:
+            workorder._schedule_mo_workorders()
+        
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
             'params': {
-                'type': 'success' if failed_count == 0 else 'warning',
-                'message': message,
+                'type': 'success',
+                'message': f'Work orders rescheduled successfully based on MO start date.',
+                'sticky': False,
+            }
+        }
+
+    # Remove duplicate method since it's now in base file
+
+    def action_check_workcenter_conflicts(self):
+        """Check for scheduling conflicts on work centers"""
+        conflicts = []
+        
+        for workorder in self:
+            if not workorder.date_planned_start or not workorder.date_planned_finished:
+                continue
+                
+            # Check if current scheduling has conflicts
+            if not workorder._is_time_slot_available(
+                from_utc_to_melbourne_naive(workorder.date_planned_start),
+                from_utc_to_melbourne_naive(workorder.date_planned_finished)
+            ):
+                conflicts.append(workorder)
+        
+        if conflicts:
+            conflict_names = ', '.join(conflicts.mapped('name'))
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'type': 'warning',
+                    'message': f'Scheduling conflicts found for work orders: {conflict_names}',
+                    'sticky': True,
+                }
+            }
+        else:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'type': 'success',
+                    'message': 'No scheduling conflicts detected.',
+                    'sticky': False,
+                }
+            }
+
+    def action_resolve_conflicts(self):
+        """Automatically resolve scheduling conflicts by rescheduling"""
+        for workorder in self:
+            if not workorder.date_planned_start or not workorder.date_planned_finished:
+                continue
+                
+            current_start = from_utc_to_melbourne_naive(workorder.date_planned_start)
+            current_end = from_utc_to_melbourne_naive(workorder.date_planned_finished)
+            
+            # Check if there's a conflict
+            if not workorder._is_time_slot_available(current_start, current_end):
+                # Find next available slot
+                new_start = workorder._find_next_available_slot(current_start)
+                new_end = workorder._calculate_planned_end_date(new_start)
+                
+                # Update the work order
+                workorder.write({
+                    'date_planned_start': to_utc_naive(new_start),
+                    'date_planned_finished': to_utc_naive(new_end)
+                })
+                
+                _logger.info(f"Resolved conflict for work order {workorder.name}: moved to {new_start} - {new_end}")
+        
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'type': 'success',
+                'message': 'Scheduling conflicts resolved.',
+                'sticky': False,
+            }
+        }
+
+    def action_manual_reschedule(self):
+        """Open wizard for manual rescheduling"""
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Reschedule Work Order',
+            'res_model': 'mrp.workorder.reschedule.wizard',
+            'view_mode': 'form',
+            'target': 'new',
+            'context': {'default_workorder_id': self.id}
+        }
+
+
+class MrpProduction(models.Model):
+    _inherit = 'mrp.production'
+    
+    def write(self, vals):
+        """Re-schedule work orders when MO date_start changes"""
+        result = super(MrpProduction, self).write(vals)
+        
+        if 'date_start' in vals:
+            for production in self:
+                if production.workorder_ids:
+                    # Reschedule all work orders when MO start date changes
+                    production.workorder_ids[0]._schedule_mo_workorders()
+                    _logger.info(f"Rescheduled work orders for MO {production.name} due to date_start change")
+        
+        return result
+
+    def action_reschedule_all_workorders(self):
+        """Action to reschedule all work orders for this MO"""
+        if self.workorder_ids:
+            self.workorder_ids[0]._schedule_mo_workorders()
+        
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'type': 'success',
+                'message': f'All work orders rescheduled for MO {self.name}.',
+                'sticky': False,
+            }
+        }
+
+
+class MrpWorkorderRescheduleWizard(models.TransientModel):
+    _name = 'mrp.workorder.reschedule.wizard'
+    _description = 'Work Order Reschedule Wizard'
+    
+    workorder_id = fields.Many2one('mrp.workorder', string='Work Order', required=True)
+    new_start_date = fields.Datetime(string='New Start Date', required=True)
+    reschedule_mode = fields.Selection([
+        ('this_only', 'This Work Order Only'),
+        ('this_and_following', 'This and Following Work Orders'),
+        ('all_mo_workorders', 'All Work Orders in MO')
+    ], string='Reschedule Mode', default='this_and_following', required=True)
+    
+    def action_reschedule(self):
+        """Execute the rescheduling based on selected mode"""
+        workorder = self.workorder_id
+        new_start = from_utc_to_melbourne_naive(self.new_start_date)
+        
+        if self.reschedule_mode == 'this_only':
+            # Reschedule only this work order
+            planned_end = workorder._calculate_planned_end_date(new_start)
+            workorder.write({
+                'date_planned_start': to_utc_naive(new_start),
+                'date_planned_finished': to_utc_naive(planned_end)
+            })
+            
+        elif self.reschedule_mode == 'this_and_following':
+            # Reschedule this and following work orders
+            mo = workorder.production_id
+            workorders = mo.workorder_ids.sorted('sequence')
+            
+            # Find current work order position
+            current_index = list(workorders).index(workorder)
+            following_workorders = workorders[current_index:]
+            
+            current_start_date = new_start
+            for wo in following_workorders:
+                planned_end = wo._calculate_planned_end_date(current_start_date)
+                wo.write({
+                    'date_planned_start': to_utc_naive(current_start_date),
+                    'date_planned_finished': to_utc_naive(planned_end)
+                })
+                current_start_date = planned_end
+                
+        elif self.reschedule_mode == 'all_mo_workorders':
+            # Update MO start date and reschedule all work orders
+            workorder.production_id.write({
+                'date_start': self.new_start_date
+            })
+            # The write method on MrpProduction will trigger rescheduling
+        
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'type': 'success',
+                'message': 'Work orders rescheduled successfully.',
                 'sticky': False,
             }
         }

@@ -51,18 +51,25 @@ def fetch_odoo_data(model_name, fields=None, domain=None):
 
 manufacturing_orders = fetch_odoo_data(
     'mrp.production',
-    fields=['id', 'date_start' ,'name', 'project_number', 'origin', 'state', 'certainty', 'product_id', 'product_qty'],
+    fields=['id', 'date_start' ,'name', 'project_number', 'origin', 'state', 'certainty', 'product_id', 'product_qty', 'certainty'],
     domain=[('state', '!=', 'cancel')]
 )  
 
 work_orders = fetch_odoo_data(
     'mrp.workorder',
-    fields=['id', 'name', 'workcenter_id', 'production_id', 'project_number', 'mo_state_display'],
+    fields=['id', 'name', 'workcenter_id', 'production_id', 'project_number', 'mo_state_display', 'mo_date_start', 'state'],
     domain=[('state', '!=', 'cancel')]
+)
+
+workcenters = fetch_odoo_data(
+    'mrp.workcenter',
+    fields=['id', 'name', 'code', 'company_id'],
+    domain=[('active', '=', True)]
 )
 
 st.dataframe(manufacturing_orders)
 st.dataframe(work_orders)
+st.dataframe(workcenters)
 
 def clean_odoo_data(records):
     """Clean and format Odoo data for Streamlit display"""
@@ -109,56 +116,3 @@ def fetch_odoo_data(model_name, fields=None, domain=None):
         return []
 
 
-# Test connection first
-with st.spinner("Connecting to Odoo..."):
-    models, db, uid, password = connect_odoo()
-
-if not models:
-    st.error("❌ Cannot connect to Odoo")
-    st.stop()
-
-st.success("✅ Connected to Odoo")
-
-# Manufacturing Orders
-st.subheader("📋 Manufacturing Orders")
-manufacturing_data = fetch_odoo_data(
-    'mrp.production',
-    fields=['id', 'name', 'project_number', 'state', 'product_id', 'product_qty'],
-    domain=[('state', '!=', 'cancel')]
-)
-
-if manufacturing_data:
-    manufacturing_orders = clean_odoo_data(manufacturing_data)
-    st.dataframe(manufacturing_orders, use_container_width=True)
-else:
-    st.info("No manufacturing orders found")
-
-# Work Orders
-st.subheader("⚙️ Work Orders")
-work_orders_data = fetch_odoo_data(
-    'mrp.workorder',
-    fields=['id', 'name', 'state', 'production_id', 'workcenter_id'],
-    domain=[('state', '!=', 'cancel')]
-)
-
-if work_orders_data:
-    work_orders = clean_odoo_data(work_orders_data)
-    st.dataframe(work_orders, use_container_width=True)
-else:
-    st.info("No work orders found")
-
-# Add some metrics
-if manufacturing_data:
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        total_orders = len(manufacturing_data)
-        st.metric("Total Manufacturing Orders", total_orders)
-    
-    with col2:
-        confirmed = len([r for r in manufacturing_data if r.get('state') == 'confirmed'])
-        st.metric("Confirmed Orders", confirmed)
-    
-    with col3:
-        in_progress = len([r for r in manufacturing_data if r.get('state') == 'progress'])
-        st.metric("In Progress", in_progress)

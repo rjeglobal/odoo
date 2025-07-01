@@ -1,173 +1,198 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Add date fields to work order tree view -->
-    <record id="mrp_workorder_tree_view_dates" model="ir.ui.view">
-        <field name="name">mrp.workorder.tree.dates</field>
+    <!-- Calendar View using MO start date -->
+    <record id="mrp_workorder_calendar_view_basic" model="ir.ui.view">
+        <field name="name">mrp.workorder.calendar.basic</field>
         <field name="model">mrp.workorder</field>
-        <field name="inherit_id" ref="mrp.mrp_production_workorder_tree_editable_view"/>
         <field name="arch" type="xml">
-            <!-- Add planned and actual dates after workcenter -->
-            <xpath expr="//field[@name='workcenter_id']" position="after">
-                <field name="date_planned_start" widget="datetime" optional="show"/>
-                <field name="date_planned_finished" widget="datetime" optional="show"/>
-            </xpath>
-        </field>
-    </record>
-
-    <!-- Add dynamic side filters for work centers and status in manufacturing/work order list view -->
-    <record id="mrp_workorder_search_view_filters" model="ir.ui.view">
-        <field name="name">mrp.workorder.search.filters</field>
-        <field name="model">mrp.workorder</field>
-        <field name="inherit_id" ref="mrp.view_mrp_production_work_order_search"/>
-        <field name="arch" type="xml">
-            <!-- Add work center filters to main work order search -->
-            <xpath expr="//search" position="inside">
-                <separator/>
-                <filter string="Group by Work Center" name="group_by_workcenter" context="{'group_by': 'workcenter_id'}"/>
-                <separator/>
-                <searchpanel>
-                    <field name="workcenter_id" string="Work Centers" icon="fa-industry" enable_counters="1"/>
-                    <field name="state" string="Status" icon="fa-tasks" enable_counters="1"/>
-                </searchpanel>
-            </xpath>
-        </field>
-    </record>
-
-    <!-- Add date fields to work order form view -->
-    <record id="mrp_workorder_form_view_dates" model="ir.ui.view">
-        <field name="name">mrp.workorder.form.dates</field>
-        <field name="model">mrp.workorder</field>
-        <field name="inherit_id" ref="mrp.mrp_production_workorder_form_view_inherit"/>
-        <field name="arch" type="xml">
-            <!-- Add scheduling group -->
-            <xpath expr="//sheet/group[1]" position="after">
-                <group string="Scheduling">
-                    <group string="Planned">
-                        <field name="date_planned_start"/>
-                        <field name="date_planned_finished"/>
-                        <field name="duration_expected" widget="float_time"/>
-                    </group>
-                    <group string="Actual">
-                        <field name="date_start" readonly="1"/>
-                        <field name="date_finished" readonly="1"/>
-                        <field name="duration" widget="float_time" readonly="1"/>
-                    </group>
-                </group>
-            </xpath>
-        </field>
-    </record>
-
-    <!-- Calendar view for work orders showing planned dates -->
-    <record id="mrp_workorder_calendar_view" model="ir.ui.view">
-        <field name="name">mrp.workorder.calendar</field>
-        <field name="model">mrp.workorder</field>
-        <field name="priority">20</field>
-        <field name="arch" type="xml">
-            <calendar string="Work Orders Calendar" 
-                      date_start="date_planned_start" 
-                      date_stop="date_planned_finished"
+            <calendar string="Work Order Schedule" 
+                      date_start="mo_date_start"
                       color="workcenter_id"
-                      mode="day"
+                      mode="week"
                       event_open_popup="true"
-                      quick_create="false">
+                      quick_create="false"
+                      create="false">
                 <field name="name"/>
                 <field name="production_id"/>
-                <field name="workcenter_id" filters="1" invisible="1"/>
+                <field name="workcenter_id" filters="1"/>
                 <field name="state"/>
-                <field name="date_planned_start"/>
-                <field name="date_planned_finished"/>
+                <field name="duration_expected"/>
+                <field name="mo_date_start"/>
             </calendar>
         </field>
     </record>
 
-    <!-- Pivot view for work orders analysis -->
-    <record id="mrp_workorder_pivot_view" model="ir.ui.view">
-        <field name="name">mrp.workorder.pivot</field>
+    <!-- Kanban View grouped by work center -->
+    <record id="mrp_workorder_kanban_view_basic" model="ir.ui.view">
+        <field name="name">mrp.workorder.kanban.basic</field>
         <field name="model">mrp.workorder</field>
         <field name="arch" type="xml">
-            <pivot string="Work Orders Analysis">
+            <kanban default_group_by="workcenter_id" quick_create="false" class="o_kanban_small_column">
+                <field name="id"/>
+                <field name="name"/>
+                <field name="production_id"/>
+                <field name="workcenter_id"/>
+                <field name="mo_date_start"/>
+                <field name="duration_expected"/>
+                <field name="state"/>
+                <templates>
+                    <t t-name="kanban-box">
+                        <div class="oe_kanban_card oe_kanban_global_click">
+                            <div class="oe_kanban_content">
+                                <div class="o_kanban_record_top">
+                                    <div class="o_kanban_record_headings">
+                                        <strong class="o_kanban_record_title">
+                                            <field name="name"/>
+                                        </strong>
+                                        <div class="o_kanban_record_subtitle text-muted">
+                                            MO: <field name="production_id"/>
+                                        </div>
+                                    </div>
+                                    <div class="o_kanban_record_top_right">
+                                        <field name="state" widget="badge"/>
+                                    </div>
+                                </div>
+                                <div class="o_kanban_record_body">
+                                    <div class="row mb-2">
+                                        <div class="col-12">
+                                            <i class="fa fa-industry"/> <field name="workcenter_id"/>
+                                        </div>
+                                    </div>
+                                    <div class="row mb-2">
+                                        <div class="col-6">
+                                            <i class="fa fa-clock-o"/> <field name="duration_expected" widget="float_time"/>
+                                        </div>
+                                        <div class="col-6">
+                                            <i class="fa fa-tasks"/> <field name="state"/>
+                                        </div>
+                                    </div>
+                                    <t t-if="record.mo_date_start.raw_value">
+                                        <div class="row">
+                                            <div class="col-12 text-muted">
+                                                <i class="fa fa-calendar"/> 
+                                                <field name="mo_date_start" widget="date"/>
+                                            </div>
+                                        </div>
+                                    </t>
+                                </div>
+                            </div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <!-- Pivot View for Analysis -->
+    <record id="mrp_workorder_pivot_view_basic" model="ir.ui.view">
+        <field name="name">mrp.workorder.pivot.basic</field>
+        <field name="model">mrp.workorder</field>
+        <field name="arch" type="xml">
+            <pivot string="Work Order Analysis">
                 <field name="workcenter_id" type="row"/>
-                <field name="date_planned_start" type="col" interval="week"/>
+                <field name="mo_date_start" type="col" interval="week"/>
                 <field name="duration_expected" type="measure"/>
+                <field name="production_id" type="row"/>
             </pivot>
         </field>
     </record>
 
-    <!-- Server action to populate planned dates -->
-    <record id="action_populate_planned_dates" model="ir.actions.server">
-        <field name="name">Populate Planned Dates</field>
-        <field name="model_id" ref="mrp.model_mrp_workorder"/>
-        <field name="binding_model_id" ref="mrp.model_mrp_workorder"/>
-        <field name="binding_view_types">list,form</field>
-        <field name="state">code</field>
-        <field name="code">
-records.populate_planned_dates()
-        </field>
-    </record>
-
-    <!-- Server action for scheduling selected work orders -->
-    <record id="action_schedule_selected_workorders" model="ir.actions.server">
-        <field name="name">Schedule Selected Work Orders</field>
-        <field name="model_id" ref="mrp.model_mrp_workorder"/>
-        <field name="binding_model_id" ref="mrp.model_mrp_workorder"/>
-        <field name="binding_view_types">list</field>
-        <field name="state">code</field>
-        <field name="code">
-action = records.action_schedule_selected_workorders()
-        </field>
-    </record>
-
-    <!-- Add scheduling status to tree view -->
-    <record id="mrp_workorder_tree_view_scheduling_status" model="ir.ui.view">
-        <field name="name">mrp.workorder.tree.scheduling.status</field>
+    <!-- Enhanced search view -->
+    <record id="mrp_workorder_search_view_basic" model="ir.ui.view">
+        <field name="name">mrp.workorder.search.basic</field>
         <field name="model">mrp.workorder</field>
-        <field name="inherit_id" ref="mrp_workorder_tree_view_dates"/>
+        <field name="inherit_id" ref="mrp.view_mrp_production_work_order_search"/>
         <field name="arch" type="xml">
-            <xpath expr="//field[@name='date_planned_finished']" position="after">
-                <field name="scheduling_status" widget="badge" 
-                       decoration-success="scheduling_status == 'scheduled'"
-                       decoration-warning="scheduling_status == 'unscheduled'"
-                       decoration-danger="scheduling_status == 'overdue'"
-                       optional="show"/>
+            <xpath expr="//search" position="inside">
+                <separator/>
+                <filter string="This Week" name="this_week"
+                        domain="[('mo_date_start', '&gt;=', (context_today() + datetime.timedelta(days=-context_today().weekday())).strftime('%Y-%m-%d')), ('mo_date_start', '&lt;', (context_today() + datetime.timedelta(days=7-context_today().weekday())).strftime('%Y-%m-%d'))]"/>
+                <filter string="Next Week" name="next_week"
+                        domain="[('mo_date_start', '&gt;=', (context_today() + datetime.timedelta(days=7-context_today().weekday())).strftime('%Y-%m-%d')), ('mo_date_start', '&lt;', (context_today() + datetime.timedelta(days=14-context_today().weekday())).strftime('%Y-%m-%d'))]"/>
+                
+                <separator/>
+                <filter string="Group by Work Center" name="group_by_workcenter" 
+                        context="{'group_by': 'workcenter_id'}"/>
+                <filter string="Group by Week" name="group_by_week" 
+                        context="{'group_by': 'mo_date_start:week'}"/>
             </xpath>
         </field>
     </record>
 
-    <!-- TEMPORARILY COMMENTED OUT - Add scheduling buttons to form view 
-    <record id="mrp_workorder_form_view_scheduling_buttons_v2" model="ir.ui.view">
-        <field name="name">mrp.workorder.form.scheduling.buttons.v2</field>
-        <field name="model">mrp.workorder</field>
-        <field name="inherit_id" ref="mrp_workorder_form_view_dates"/>
-        <field name="arch" type="xml">
-            <xpath expr="//header" position="inside">
-                <button name="button_schedule_sequential" string="Schedule Sequential" 
-                        type="object" class="btn-primary"
-                        invisible="scheduling_status == 'scheduled'"/>
-            </xpath>
-        </field>
-    </record>
-    -->
-
-    <!-- Action for work order calendar -->
-    <record id="mrp_workorder_action_calendar" model="ir.actions.act_window">
-        <field name="name">Work Order Calendar</field>
+    <!-- Kanban Action -->
+    <record id="action_workorder_kanban" model="ir.actions.act_window">
+        <field name="name">Work Order Kanban</field>
         <field name="res_model">mrp.workorder</field>
-        <field name="view_mode">calendar,list,form</field>
-        <field name="view_id" ref="mrp_workorder_calendar_view"/>
-        <field name="search_view_id" ref="mrp_workorder_search_view_filters"/>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="view_id" ref="mrp_workorder_kanban_view_basic"/>
+        <field name="search_view_id" ref="mrp_workorder_search_view_basic"/>
         <field name="domain">[('state', 'not in', ['done', 'cancel'])]</field>
-        <field name="context">{}</field>
+        <field name="context">{'search_default_group_by_workcenter': 1}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
-                No work orders scheduled
+                No work orders to manage
+            </p>
+            <p>
+                Work orders will appear here grouped by work centers.
             </p>
         </field>
     </record>
 
-    <!-- Menu item -->
-    <menuitem id="menu_mrp_workorder_calendar"
+    <!-- Calendar Action -->
+    <record id="action_workorder_calendar" model="ir.actions.act_window">
+        <field name="name">Work Order Calendar</field>
+        <field name="res_model">mrp.workorder</field>
+        <field name="view_mode">calendar,list,form</field>
+        <field name="view_id" ref="mrp_workorder_calendar_view_basic"/>
+        <field name="search_view_id" ref="mrp_workorder_search_view_basic"/>
+        <field name="domain">[('state', 'not in', ['done', 'cancel'])]</field>
+        <field name="context">{'search_default_group_by_workcenter': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No work orders scheduled
+            </p>
+            <p>
+                Work orders will appear here when Manufacturing Orders have start dates.
+            </p>
+        </field>
+    </record>
+
+    <!-- Pivot Analysis Action -->
+    <record id="action_workorder_analysis" model="ir.actions.act_window">
+        <field name="name">Work Order Analysis</field>
+        <field name="res_model">mrp.workorder</field>
+        <field name="view_mode">pivot,graph,list</field>
+        <field name="view_id" ref="mrp_workorder_pivot_view_basic"/>
+        <field name="search_view_id" ref="mrp_workorder_search_view_basic"/>
+        <field name="domain">[('state', 'not in', ['done', 'cancel'])]</field>
+        <field name="context">{}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No data to analyze
+            </p>
+            <p>
+                Schedule work orders to see workload analysis.
+            </p>
+        </field>
+    </record>
+
+    <!-- Menu Items -->
+    <menuitem id="menu_workorder_kanban"
+              name="Work Order Kanban"
+              parent="mrp.menu_mrp_manufacturing"
+              action="action_workorder_kanban"
+              sequence="19"/>
+
+    <menuitem id="menu_workorder_calendar"
               name="Work Order Calendar"
               parent="mrp.menu_mrp_manufacturing"
-              action="mrp_workorder_action_calendar"
-              sequence="25"/>
+              action="action_workorder_calendar"
+              sequence="20"/>
+
+    <menuitem id="menu_workorder_analysis"
+              name="Work Order Analysis"
+              parent="mrp.menu_mrp_manufacturing"
+              action="action_workorder_analysis"
+              sequence="21"/>
+
 </odoo>
