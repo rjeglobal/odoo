@@ -318,7 +318,7 @@ if proceed_with_dashboard and not manufacturing_orders_df.empty and 'Product Cat
                         <div style="text-align: center; white-space: normal; word-wrap: break-word;
                                     background-color: #d4d9ee; border: 2px solid #d4d9ee; border-radius: 10px; padding: 10px;">
                             <h4>{mfg_kpi_grp['Product Category'].iloc[i]} </h4>
-                            <h5>{int(mfg_kpi_grp['Over Capacity'].iloc[i])} operations over capacity</h5>
+                            <h5>{int(mfg_kpi_grp['Over Capacity'].iloc[i])} demands over capacity</h5>
                             <h6>For date range: {start_date} to {end_date}</h6>
                             <h6>and {selected_certainty}% certainty</h6>
                         </div>

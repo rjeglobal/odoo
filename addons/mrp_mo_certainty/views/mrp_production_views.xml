@@ -6,8 +6,8 @@
         <field name="model">mrp.production</field>
         <field name="inherit_id" ref="mrp.mrp_production_form_view"/>
         <field name="arch" type="xml">
-            <!-- Add certainty field after product quantity -->
-            <xpath expr="//field[@name='product_qty']" position="after">
+            <!-- Add certainty field after user_id -->
+            <xpath expr="//field[@name='user_id']" position="after">
                 <field name="certainty" 
                        widget="selection"
                        readonly="state not in ['draft', 'quoted']"/>
@@ -21,16 +21,15 @@
         <field name="model">mrp.production</field>
         <field name="inherit_id" ref="mrp.mrp_production_tree_view"/>
         <field name="arch" type="xml">
-            <!-- Add certainty after quantity -->
-            <xpath expr="//field[@name='product_qty']" position="after">
-                <field name="certainty" 
-                       widget="badge" 
-                       optional="show"
-                       decoration-muted="certainty == '0'"
-                       decoration-danger="certainty == '25'"
-                       decoration-warning="certainty == '50'"
-                       decoration-info="certainty == '75'"
-                       decoration-success="certainty == '100'"/>
+            <xpath expr="//field[@name='user_id']" position="after">
+                <field name="certainty"
+                        widget="badge"
+                        optional="show"
+                    decoration-muted="certainty == '0'"
+                    decoration-danger="certainty == '25'"
+                    decoration-warning="certainty == '50'"
+                    decoration-info="certainty == '75'"
+                    decoration-success="certainty == '100'"/>
             </xpath>
         </field>
     </record>

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    
+    <!-- Simple Tree View -->
+    <record id="product_category_capacity_tree_view" model="ir.ui.view">
+        <field name="name">product.category.capacity.tree</field>
+        <field name="model">product.category.capacity</field>
+        <field name="arch" type="xml">
+            <list string="Monthly Category Capacity" editable="bottom">
+                <field name="category_id"/>
+                <field name="month"/>
+                <field name="year"/>
+                <field name="monthly_capacity"/>
+                <field name="capacity_uom_id"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Simple Form View -->
+    <record id="product_category_capacity_form_view" model="ir.ui.view">
+        <field name="name">product.category.capacity.form</field>
+        <field name="model">product.category.capacity</field>
+        <field name="arch" type="xml">
+            <form string="Monthly Category Capacity">
+                <sheet>
+                    <group>
+                        <field name="category_id"/>
+                        <field name="month"/>
+                        <field name="year"/>
+                        <field name="monthly_capacity"/>
+                        <field name="capacity_uom_id"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Simple Action -->
+    <record id="product_category_capacity_action" model="ir.actions.act_window">
+        <field name="name">Monthly Category Capacity</field>
+        <field name="res_model">product.category.capacity</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- Simple Menu -->
+    <menuitem id="product_category_capacity_menu"
+              name="Monthly Capacity"
+              parent="mrp.menu_mrp_manufacturing"
+              action="product_category_capacity_action"
+              sequence="50"/>
+
+</odoo>

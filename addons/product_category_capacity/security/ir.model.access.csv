@@ -1,0 +1,5 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_product_category_capacity_user,product.category.capacity.user,model_product_category_capacity,mrp.group_mrp_user,1,1,1,0
+access_product_category_capacity_manager,product.category.capacity.manager,model_product_category_capacity,mrp.group_mrp_manager,1,1,1,1
+access_product_category_capacity_wizard_user,product.category.capacity.wizard.user,model_product_category_capacity_wizard,mrp.group_mrp_user,1,1,1,1
+access_product_category_capacity_wizard_line_user,product.category.capacity.wizard.line.user,model_product_category_capacity_wizard_line,mrp.group_mrp_user,1,1,1,1

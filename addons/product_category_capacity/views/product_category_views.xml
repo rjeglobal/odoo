@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    
+    <!-- Wizard Form View -->
+    <record id="product_category_capacity_wizard_form_view" model="ir.ui.view">
+        <field name="name">product.category.capacity.wizard.form</field>
+        <field name="model">product.category.capacity.wizard</field>
+        <field name="type">form</field>
+        <field name="arch" type="xml">
+            <form string="Bulk Capacity Setup">
+                <sheet>
+                    <div class="oe_title">
+                        <h1>Bulk Capacity Setup</h1>
+                        <field name="setup_type" widget="radio" options="{'horizontal': true}"/>
+                    </div>
+                    
+                    <group>
+                        <group name="categories">
+                            <field name="category_ids" widget="many2many_tags" 
+                                   options="{'no_create': True, 'no_open': True}"/>
+                        </group>
+                        <group name="time_period">
+                            <field name="year"/>
+                            <field name="month" attrs="{'invisible': [('setup_type', '!=', 'month')], 'required': [('setup_type', '=', 'month')]}"/>
+                            <field name="month_from" attrs="{'invisible': [('setup_type', '!=', 'range')], 'required': [('setup_type', '=', 'range')]}"/>
+                            <field name="month_to" attrs="{'invisible': [('setup_type', '!=', 'range')], 'required': [('setup_type', '=', 'range')]}"/>
+                        </group>
+                    </group>
+                    
+                    <group string="Capacity Settings">
+                        <group name="capacity_config">
+                            <field name="default_capacity"/>
+                            <field name="capacity_uom_id"/>
+                        </group>
+                        <group name="options">
+                            <field name="overwrite_existing"/>
+                        </group>
+                    </group>
+                    
+                    <group string="Preview" attrs="{'invisible': [('line_ids', '=', [])]}">
+                        <field name="line_ids" nolabel="1">
+                            <tree string="Capacity Records to Create" editable="bottom">
+                                <field name="category_id" readonly="1"/>
+                                <field name="month" readonly="1"/>
+                                <field name="year" readonly="1"/>
+                                <field name="monthly_capacity"/>
+                                <field name="capacity_uom_id"/>
+                                <field name="existing_record" readonly="1" 
+                                       widget="boolean" 
+                                       string="Exists"/>
+                            </tree>
+                        </field>
+                    </group>
+                </sheet>
+                
+                <footer>
+                    <button name="action_create_capacity_records" 
+                            type="object" 
+                            string="Create Capacity Records" 
+                            class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Bulk Setup Action -->
+    <record id="product_category_capacity_bulk_setup_action" model="ir.actions.act_window">
+        <field name="name">Bulk Capacity Setup</field>
+        <field name="res_model">product.category.capacity.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <!-- Menu for Bulk Setup -->
+    <menuitem id="product_category_capacity_bulk_menu"
+              name="Bulk Capacity Setup"
+              parent="product_category_capacity_main_menu"
+              action="product_category_capacity_bulk_setup_action"
+              sequence="20"/>
+
+</odoo>
