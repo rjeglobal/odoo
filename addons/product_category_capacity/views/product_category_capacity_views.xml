@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     
-    <!-- Simple Tree View -->
+    <!-- Tree View -->
     <record id="product_category_capacity_tree_view" model="ir.ui.view">
         <field name="name">product.category.capacity.tree</field>
         <field name="model">product.category.capacity</field>
@@ -9,40 +9,97 @@
             <list string="Monthly Category Capacity" editable="bottom">
                 <field name="category_id"/>
                 <field name="month"/>
-                <field name="year"/>
+                <field name="year" widget="integer"/>
                 <field name="monthly_capacity"/>
                 <field name="capacity_uom_id"/>
             </list>
         </field>
     </record>
 
-    <!-- Simple Form View -->
+    <!-- Form View -->
     <record id="product_category_capacity_form_view" model="ir.ui.view">
         <field name="name">product.category.capacity.form</field>
         <field name="model">product.category.capacity</field>
         <field name="arch" type="xml">
             <form string="Monthly Category Capacity">
                 <sheet>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="display_name" readonly="1"/>
+                        </h1>
+                    </div>
+                    
                     <group>
-                        <field name="category_id"/>
-                        <field name="month"/>
-                        <field name="year"/>
+                        <group name="category_info">
+                            <field name="category_id"/>
+                            <field name="capacity_uom_id"/>
+                        </group>
+                        <group name="time_period">
+                            <field name="month"/>
+                            <field name="year" widget="integer"/>
+                            <field name="company_id" groups="base.group_multi_company"/>
+                        </group>
+                    </group>
+                    
+                    <group string="Capacity Information">
                         <field name="monthly_capacity"/>
-                        <field name="capacity_uom_id"/>
+                        <field name="notes" placeholder="Additional notes about this capacity..."/>
                     </group>
                 </sheet>
             </form>
         </field>
     </record>
 
-    <!-- Simple Action -->
+    <!-- Search View -->
+    <record id="product_category_capacity_search_view" model="ir.ui.view">
+        <field name="name">product.category.capacity.search</field>
+        <field name="model">product.category.capacity</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="category_id"/>
+                <field name="display_name"/>
+                <field name="year"/>
+                <field name="capacity_uom_id"/>
+                
+                <filter name="current_year" string="Current Year" 
+                        domain="[('year', '=', context_today().year)]"/>
+                <filter name="next_year" string="Next Year" 
+                        domain="[('year', '=', context_today().year + 1)]"/>
+                
+                <separator/>
+                <filter name="high_capacity" string="High Capacity (&gt;1000)" 
+                        domain="[('monthly_capacity', '&gt;', 1000)]"/>
+                <filter name="low_capacity" string="Low Capacity (&lt;100)" 
+                        domain="[('monthly_capacity', '&lt;', 100)]"/>
+                
+                <group expand="0" string="Group By">
+                    <filter name="group_by_category" string="Category" context="{'group_by': 'category_id'}"/>
+                    <filter name="group_by_year" string="Year" context="{'group_by': 'year'}"/>
+                    <filter name="group_by_uom" string="Unit of Measure" context="{'group_by': 'capacity_uom_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action -->
     <record id="product_category_capacity_action" model="ir.actions.act_window">
         <field name="name">Monthly Category Capacity</field>
         <field name="res_model">product.category.capacity</field>
         <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="product_category_capacity_search_view"/>
+        <field name="context">{'search_default_current_year': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Set up monthly capacity for product categories!
+            </p>
+            <p>
+                Define the monthly production capacity for each product category.
+                This helps in production planning and capacity management.
+            </p>
+        </field>
     </record>
 
-    <!-- Simple Menu -->
+    <!-- Menu -->
     <menuitem id="product_category_capacity_menu"
               name="Monthly Capacity"
               parent="mrp.menu_mrp_manufacturing"

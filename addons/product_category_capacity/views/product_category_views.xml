@@ -20,7 +20,7 @@
                                    options="{'no_create': True, 'no_open': True}"/>
                         </group>
                         <group name="time_period">
-                            <field name="year"/>
+                            <field name="year" widget="integer"/>
                             <field name="month" attrs="{'invisible': [('setup_type', '!=', 'month')], 'required': [('setup_type', '=', 'month')]}"/>
                             <field name="month_from" attrs="{'invisible': [('setup_type', '!=', 'range')], 'required': [('setup_type', '=', 'range')]}"/>
                             <field name="month_to" attrs="{'invisible': [('setup_type', '!=', 'range')], 'required': [('setup_type', '=', 'range')]}"/>

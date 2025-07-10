@@ -162,38 +162,19 @@ if not df.empty and 'Product Category' in df.columns:
 
     with st.expander("📊 Product Category Capacity Planning", expanded=False):
         st.markdown("🎛️ Set Monthly Capacity by Product Category")
-        num_categories = len(unique_categories)
-        rows_needed = (num_categories + 2) // 3
-        for row in range(rows_needed):
-            capacity_cols = st.columns(3)
-            for col_idx in range(3):
-                category_idx = row * 3 + col_idx
-                if category_idx < num_categories:
-                    category = unique_categories[category_idx]
-                    with capacity_cols[col_idx]:
-                        st.markdown(f"**{category}**")
-                        current_operations = len(df[(df['Product Category'] == category) & (df['certainty'] >= 25)])
-                        default_capacity = max(current_operations, 20)
-                        capacity_key = f"capacity_{category.replace(' ', '_')}"
-                        current_capacity = st.session_state.category_capacities.get(category, default_capacity)
-                        new_capacity = st.number_input(
-                            f"Monthly Capacity",
-                            min_value=1,
-                            max_value=1000,
-                            value=int(current_capacity),
-                            step=1,
-                            key=capacity_key,
-                            help=f"Monthly capacity for {category} (operations per month)"
-                        )
-                        st.session_state.category_capacities[category] = new_capacity
-                        st.caption(f"Current operations: {current_operations}")
-        st.markdown("---")
-        _, col2, _ = st.columns([1, 1, 1])
-        with col2:
-            if st.button("🔄 Apply Capacity Settings", type="primary", use_container_width=True):
-                set_cached_category_capacities(st.session_state.category_capacities)
-                st.success("✅ Capacity settings applied! (cached for 3600 mins)")
-                st.rerun()
+        product_cat_df = fetch_odoo_data('product.category.capacity', fields=['category_id', 'monthly_capacity'])
+        product_cat_df = pd.DataFrame(product_cat_df)
+        product_cat_df = product_cat_df.drop(columns=['id'], errors='ignore')
+        # st.dataframe(product_cat_df, use_container_width=True)
+
+        if product_cat_df.empty:
+            st.warning("⚠️ No product category capacities found in Odoo. Defaulting to 100 operations per month.")
+            st.session_state.category_capacities = {cat: 100 for cat in unique_categories}
+        else:
+            product_cat_df['category_id'] = product_cat_df['category_id'].apply(lambda x: x[1] if isinstance(x, (list, tuple)) and len(x) >= 2 else x)
+            st.session_state.category_capacities = {
+                row['category_id']: row['monthly_capacity'] for _, row in product_cat_df.iterrows()
+            }  
 
     # --- Apply Capacity ---
     df['Capacity'] = df['Product Category'].apply(lambda x: st.session_state.category_capacities.get(x, 100))
